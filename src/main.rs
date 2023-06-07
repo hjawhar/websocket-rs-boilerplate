@@ -19,7 +19,6 @@ async fn main() -> Result<(), CustomErr> {
     let (tx1, rx1): (Sender<bool>, Receiver<bool>) = mpsc::channel(32);
     let tx1_mutex = Arc::new(Mutex::new(tx1));
     let tx1_clone1: Arc<Mutex<Sender<bool>>> = tx1_mutex.clone();
-    let tx1_clone2: Arc<Mutex<Sender<bool>>> = tx1_mutex.clone();
 
     let rx1_mutex: Arc<Mutex<Receiver<bool>>> = Arc::new(Mutex::new(rx1));
     let rx1_clone1: Arc<Mutex<Receiver<bool>>> = rx1_mutex.clone();
@@ -38,18 +37,21 @@ async fn main() -> Result<(), CustomErr> {
     };
     client.init().await;
 
-    let ws_client_clone1: Arc<WsClient> = Arc::new(client);
+    let ws_client_clone1 = Arc::new(Mutex::new(client));
     let ws_client_clone2 = ws_client_clone1.clone();
-    let mut ws_client_clone3 = ws_client_clone1.clone();
+    let ws_client_clone3 = ws_client_clone1.clone();
     let mut thread_handles: Vec<JoinHandle<()>> = vec![];
 
     thread_handles.push(tokio::spawn(async move {
-        while let Some(response) = rx2_clone1.lock().await.recv().await {}
+        while let Some(response) = rx2_clone1.lock().await.recv().await {
+            ws_client_clone3.lock().await.init().await;
+        }
     }));
 
     thread_handles.push(tokio::spawn(async move {
         while let Some(response) = rx1_clone1.lock().await.recv().await {
-            let mut r = ws_client_clone2.read.as_ref().unwrap().lock().await;
+            let l = ws_client_clone2.as_ref().lock().await;
+            let mut r = l.read.as_ref().unwrap().lock().await;
             if response {
                 println!("Refreshing websockets: {}", response);
             }

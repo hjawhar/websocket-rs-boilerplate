@@ -15,8 +15,8 @@ use tokio_tungstenite::{
 
 #[derive(Debug)]
 pub struct WsClient {
-    pub write: Option<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
-    pub read: Option<Mutex<SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>>>,
+    pub write: Option<Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>>,
+    pub read: Option<Arc<Mutex<SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>>>>,
     pub tx: Arc<Mutex<Sender<bool>>>,
     pub ws_endpoint: &'static str,
 }
@@ -30,8 +30,8 @@ impl WsClient {
             Ok((stream, _)) => {
                 let (write, read) = stream.split();
                 println!("Successfully connected to {}", self.ws_endpoint);
-                self.write = Some(Mutex::new(write));
-                self.read = Some(Mutex::new(read));
+                self.write = Some(Arc::new(Mutex::new(write)));
+                self.read = Some(Arc::new(Mutex::new(read)));
                 self.tx.lock().await.send(true).await.unwrap();
             }
             Err(err) => {
