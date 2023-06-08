@@ -1,6 +1,5 @@
-use std::{sync::Arc, thread, time::Duration};
+use std::{pin::Pin, sync::Arc, thread, time::Duration};
 
-use async_recursion::async_recursion;
 use futures_util::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
@@ -22,27 +21,63 @@ pub struct WsClient {
 }
 
 impl WsClient {
-    #[async_recursion]
-    pub async fn init(&mut self) {
+    pub async fn init<'a>(&'a mut self) -> Pin<Box<(dyn futures_util::Future<Output = ()> + 'a)>> {
         println!("Connecting to {}", self.ws_endpoint);
         let request = self.new_request(self.ws_endpoint);
-        match connect_async(request).await {
-            Ok((stream, _)) => {
-                let (write, read) = stream.split();
-                println!("Successfully connected to {}", self.ws_endpoint);
-                self.write = Some(Arc::new(Mutex::new(write)));
-                self.read = Some(Arc::new(Mutex::new(read)));
-                self.tx.lock().await.send(true).await.unwrap();
+        // match connect_async(request).await {
+        //     Ok((stream, _)) => Box::pin(async move {
+        //         let (write, read) = stream.split();
+        //         println!("Successfully connected to {}", self.ws_endpoint);
+        //         self.write = Some(Arc::new(Mutex::new(write)));
+        //         self.read = Some(Arc::new(Mutex::new(read)));
+        //         self.tx.lock().await.send(true).await.unwrap();
+        //     }),
+        //     Err(err) => {
+        //         println!("Error connecting to websocket {}", err);
+        //         thread::sleep(Duration::from_millis(1500));
+        //         Box::pin(async move {
+        //             self.init().await;
+        //         })
+        //     }
+        // }
+
+        // Box::pin(async move {
+        //     println!("Test");
+        //     match connect_async(request).await {
+        //         Ok((stream, _)) => {
+        //             println!("Test2");
+        //             let (write, read) = stream.split();
+        //             println!("Successfully connected to {}", self.ws_endpoint);
+        //             self.write = Some(Arc::new(Mutex::new(write)));
+        //             self.read = Some(Arc::new(Mutex::new(read)));
+        //             self.tx.lock().await.send(true).await.unwrap();
+        //         }
+        //         Err(err) => {
+        //             println!("Error connecting to websocket {}", err);
+        //             thread::sleep(Duration::from_millis(1500));
+        //             self.init().await;
+        //         }
+        //     }
+        // })
+        Box::pin(async move {
+            match connect_async(request).await {
+                Ok((stream, _)) => {
+                    let (write, read) = stream.split();
+                    println!("Successfully connected to {}", self.ws_endpoint);
+                    self.write = Some(Arc::new(Mutex::new(write)));
+                    self.read = Some(Arc::new(Mutex::new(read)));
+                    self.tx.lock().await.send(true).await.unwrap();
+                }
+                Err(err) => {
+                    println!("Error connecting to websocket {}", err);
+                    thread::sleep(Duration::from_millis(1500));
+                    self.init().await;
+                }
             }
-            Err(err) => {
-                println!("Error connecting to websocket {}", err);
-                thread::sleep(Duration::from_millis(1500));
-                self.init().await
-            }
-        }
+        })
     }
 
-    pub async fn send(&mut self, command: String) {
+    pub async fn send(&'static mut self, command: String) {
         let cloned_msg = command.clone();
         if let Some(r) = &self.write {
             let result = r.lock().await.send(Message::Text(command)).await;
@@ -64,7 +99,7 @@ impl WsClient {
         }
     }
 
-    pub fn new_request(&self, client_endpoint: &str) -> Request<()> {
+    fn new_request(&self, client_endpoint: &str) -> Request<()> {
         let url = client_endpoint;
         let req = Request::builder()
             .method("GET")

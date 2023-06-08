@@ -13,5 +13,4 @@ url = "2.2.2"
 futures = "0.3.24"
 futures-util = "0.3.24"
 tokio-tungstenite = { version = "*", features = ["native-tls"] }
-futures-channel = "0.3.24"
-async-recursion = "1.0.4"
+futures-channel = "0.3.24" 
