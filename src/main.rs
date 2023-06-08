@@ -16,45 +16,28 @@ pub struct CustomErr {
 #[tokio::main]
 async fn main() -> Result<(), CustomErr> {
     println!("Starting app...");
-    let (tx1, rx1): (Sender<bool>, Receiver<bool>) = mpsc::channel(32);
-    let tx1_mutex = Arc::new(Mutex::new(tx1));
-    let tx1_clone1: Arc<Mutex<Sender<bool>>> = tx1_mutex.clone();
+    let (tx, mut rx): (Sender<bool>, Receiver<bool>) = mpsc::channel(32);
+    let tx_mutex = Arc::new(Mutex::new(tx));
+    let tx_mutex1 = tx_mutex.clone();
 
-    let rx1_mutex: Arc<Mutex<Receiver<bool>>> = Arc::new(Mutex::new(rx1));
-    let rx1_clone1: Arc<Mutex<Receiver<bool>>> = rx1_mutex.clone();
-
-    let (tx2, rx2): (Sender<bool>, Receiver<bool>) = mpsc::channel(32);
-    let tx2_mutex = Arc::new(Mutex::new(tx2));
-    let tx2_clone1: Arc<Mutex<Sender<bool>>> = tx2_mutex.clone();
-    let rx2_mutex: Arc<Mutex<Receiver<bool>>> = Arc::new(Mutex::new(rx2));
-    let rx2_clone1: Arc<Mutex<Receiver<bool>>> = rx2_mutex.clone();
-
-    let mut client: WsClient = WsClient {
+    let client: WsClient = WsClient {
         ws_endpoint: "ws://localhost:3000",
-        tx: tx1_clone1,
+        tx: tx_mutex,
         write: None,
         read: None,
     };
-    client.init().await;
 
     let ws_client_clone1 = Arc::new(Mutex::new(client));
-    let ws_client_clone2 = ws_client_clone1.clone();
-    let ws_client_clone3 = ws_client_clone1.clone();
     let mut thread_handles: Vec<JoinHandle<()>> = vec![];
-
+    
+    tx_mutex1.lock().await.send(true).await.unwrap();
     thread_handles.push(tokio::spawn(async move {
-        while let Some(response) = rx2_clone1.lock().await.recv().await {
-            ws_client_clone3.lock().await.init().await;
-        }
-    }));
-
-    thread_handles.push(tokio::spawn(async move {
-        while let Some(response) = rx1_clone1.lock().await.recv().await {
-            let l = ws_client_clone2.as_ref().lock().await;
-            let mut r = l.read.as_ref().unwrap().lock().await;
-            if response {
-                println!("Refreshing websockets: {}", response);
+        while let Some(_flag) = rx.recv().await {
+            if _flag {
+                ws_client_clone1.lock().await.init().await;
             }
+            let l = ws_client_clone1.as_ref().lock().await;
+            let mut r = l.read.as_ref().unwrap().lock().await;
             while let Some(response) = r.next().await {
                 match response {
                     Ok(line) => {
@@ -64,7 +47,7 @@ async fn main() -> Result<(), CustomErr> {
                         println!("Disconnected while receiving messages {}", err);
                         thread::sleep(Duration::from_millis(2000));
                         println!("Reconnecting in event based fn {}", err);
-                        tx2_clone1.lock().await.send(true).await.unwrap();
+                        tx_mutex1.lock().await.send(true).await.unwrap();
                     }
                 }
             }
